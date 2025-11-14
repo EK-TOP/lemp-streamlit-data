@@ -1,0 +1,10 @@
+lemp-app/venv/
+streamlit-app/venv/
+**/__pycache__/
+*.pyc
+*.pem
+*.key
+
+# Streamlit secrets (älä koskaan GitHubiin)
+streamlit-app/.streamlit/
+.streamlit/

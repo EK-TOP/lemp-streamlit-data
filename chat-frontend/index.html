@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MQTT Chat</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 700px;
+      margin: 20px auto;
+      background: #fafafa;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+    }
+    #messages {
+      border: 1px solid #ccc;
+      background: #fff;
+      height: 300px;
+      overflow-y: scroll;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .msg {
+      margin: 4px 0;
+      padding: 4px;
+      border-bottom: 1px solid #eee;
+    }
+    .system {
+      color: #666;
+      font-style: italic;
+    }
+    .input-row {
+      display: flex;
+      gap: 5px;
+    }
+    input {
+      padding: 8px;
+      font-size: 16px;
+      flex: 1;
+    }
+    button {
+      padding: 10px 15px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #008cff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background: #006fd1;
+    }
+  </style>
+</head>
+<body>
+
+<h1>MQTT Chat</h1>
+<div id="status" class="system">Connecting...</div>
+
+<div id="messages"></div>
+
+<div class="input-row">
+  <input id="nick" type="text" placeholder="Nickname">
+  <input id="text" type="text" placeholder="Message">
+  <button id="sendBtn">Send</button>
+</div>
+
+<script>
+ 
+
+
+  const topic = "chat/messages";
+
+  const statusEl = document.getElementById("status");
+  const messagesEl = document.getElementById("messages");
+
+
+
+  function addMessage(text, cls = "") {
+    const div = document.createElement("div");
+    div.className = "msg " + cls;
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+   async function loadHistory() {
+    try {
+      const res = await fetch('history.php');
+      if (!res.ok) return;
+      const history = await res.json();
+      history.forEach(msg => {
+        const nick = msg.nickname || "anon";
+        const text = msg.text || "";
+        addMessage(nick + ": " + text);
+      });
+      addMessage("=== Last " + history.length + " messages loaded from DB ===", "system");
+    } catch (e) {
+      console.error("Failed to load history", e);
+    }
+  }
+
+
+
+  // WebSocket → Nginx → Mosquitto
+  const url = "ws://" + window.location.host + "/mqtt";
+  const clientId = "web-" + Math.random().toString(16).substr(2, 8);
+
+  const client = mqtt.connect(url, {
+    clientId: clientId,
+    clean: true,
+    reconnectPeriod: 1000
+  });
+
+  client.on("connect", () => {
+    statusEl.textContent = "Connected";
+    addMessage("Connected to MQTT broker.", "system");
+    client.subscribe(topic);
+  });
+
+  client.on("reconnect", () => {
+    statusEl.textContent = "Reconnecting...";
+  });
+
+  client.on("error", (err) => {
+    statusEl.textContent = "Error: " + err.message;
+  });
+
+  client.on("message", (t, payload) => {
+    try {
+      const data = JSON.parse(payload.toString());
+      const nick = data.nickname || "anon";
+      addMessage(nick + ": " + data.text);
+    } catch {
+      addMessage("RAW: " + payload.toString(), "system");
+    }
+  });
+
+  document.getElementById("sendBtn").onclick = sendMessage;
+  document.getElementById("text").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendMessage();
+  });
+
+  function sendMessage() {
+    const nick = document.getElementById("nick").value || "anon";
+    const text = document.getElementById("text").value;
+    if (!text.trim()) return;
+
+    const msg = {
+      nickname: nick,
+      text: text,
+      clientId: clientId,
+      timestamp: Date.now()
+    };
+
+    client.publish(topic, JSON.stringify(msg));
+    document.getElementById("text").value = "";
+  }
+
+  window.addEventListener("load", () => {
+    loadHistory();
+  });
+   
+</script>
+
+</body>
+</html>
